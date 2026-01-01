@@ -61,23 +61,40 @@
   </div>
 </div>
 
+
+<script src="https://cdn.jsdelivr.net/npm/@fingerprintjs/fingerprintjs@3/dist/fp.min.js"></script>
 <script>
 const STORAGE_KEY = 'enquete_bombeiros_2026_voto';
+const FP_KEY = 'enquete_bombeiros_fp';
 
 const form = document.getElementById('enqueteForm');
 const msg = document.getElementById('mensagem');
 const botao = form.querySelector('button[type="submit"]');
 
-/* ========= BLOQUEIO AO CARREGAR ========= */
-if (localStorage.getItem(STORAGE_KEY)) {
-  bloquearFormulario();
-}
+let fingerprintId = null;
+
+/* ========= INICIALIZA FINGERPRINT ========= */
+(async () => {
+  if (localStorage.getItem(FP_KEY)) {
+    fingerprintId = localStorage.getItem(FP_KEY);
+  } else {
+    const fp = await FingerprintJS.load();
+    const result = await fp.get();
+    fingerprintId = result.visitorId;
+    localStorage.setItem(FP_KEY, fingerprintId);
+  }
+
+  // bloqueio local se já votou
+  if (localStorage.getItem(STORAGE_KEY)) {
+    bloquearFormulario();
+  }
+})();
 
 /* ========= SUBMIT ========= */
 form.addEventListener('submit', async function (e) {
   e.preventDefault();
 
-  if (botao.disabled) return;
+  if (botao.disabled || !fingerprintId) return;
 
   botao.disabled = true;
   botao.innerText = 'Enviando...';
@@ -85,7 +102,8 @@ form.addEventListener('submit', async function (e) {
 
   const dados = {
     militar: form.militar.value,
-    voto: form.voto.value
+    voto: form.voto.value,
+    fingerprint: fingerprintId
   };
 
   try {
@@ -98,11 +116,13 @@ form.addEventListener('submit', async function (e) {
     const result = JSON.parse(text);
 
     if (result.success) {
-      // salva bloqueio local
       localStorage.setItem(STORAGE_KEY, 'true');
-
       msg.innerHTML = '<span class="text-success">Voto registrado com sucesso ✔️</span>';
       botao.innerText = 'Voto enviado';
+      bloquearFormulario();
+
+    } else if (result.duplicate) {
+      msg.innerHTML = '<span class="text-warning">Este dispositivo já votou.</span>';
       bloquearFormulario();
 
     } else {
@@ -119,8 +139,6 @@ form.addEventListener('submit', async function (e) {
 function bloquearFormulario() {
   const inputs = form.querySelectorAll('input, select, button');
   inputs.forEach(el => el.disabled = true);
-
-  msg.innerHTML = '<span class="text-warning">Este dispositivo já registrou um voto.</span>';
 }
 
 function erroEnvio() {
